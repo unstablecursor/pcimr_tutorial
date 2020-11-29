@@ -1,0 +1,4 @@
+<launch>
+  <node pkg="pcimr_localization" name="localization_node" type="localization_node.py" output="screen">
+  </node>
+</launch>
