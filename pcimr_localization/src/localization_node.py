@@ -5,9 +5,9 @@ import rospy
 import numpy as np
 from threading import Lock
 
-from std_msgs.msg import String
+from std_msgs.msg import String, ColorRGBA, Header
 from sensor_msgs.msg import LaserScan
-from geometry_msgs.msg import Point, Twist
+from geometry_msgs.msg import Point, Twist, Pose, Quaternion
 from nav_msgs.msg import Odometry, OccupancyGrid, MapMetaData
 from visualization_msgs.msg import Marker
 
@@ -29,17 +29,20 @@ class LocalizationNode:
         self.map = OccupancyGrid()
         self.scan = LaserScan()
 
-        self.robot_pos = Point()
-        self.robot_pos_viz = Marker()
+        self.robot_pos = Point(3,3,0)
+        self.robot_pos_viz = Marker(header = Header(frame_id='map'), pose = Pose(self.robot_pos, Quaternion(0.0,0.0,0.0,1.0)), type=1, color=ColorRGBA(0.1, 0.1, 1.0, 1.0))
         self.robot_pos_map = OccupancyGrid()
 
     def get_move(self, msg):
+        rospy.loginfo(f"Got move : \n{msg}")
         self.robot_move = msg
 
     def get_map(self, msg):
+        rospy.loginfo(f"Got map : \n{msg}")
         self.map = msg
 
     def get_scan(self, msg):
+        rospy.loginfo(f"Got scan : \n{msg}")
         self.scan = msg
 
     def map_to_np(self, map: OccupancyGrid):
@@ -66,8 +69,11 @@ class LocalizationNode:
         while not rospy.is_shutdown():
             self.filter_map()
             self.robot_pos_pub.publish(self.robot_pos)
+            rospy.loginfo(f"Sent robot_pos : \n{self.robot_pos}")
             self.robot_pos_viz_pub.publish(self.robot_pos_viz)
+            rospy.loginfo(f"Sent robot_pos_viz : \n{self.robot_pos_viz}")
             self.robot_ros_map_pub.publish(self.robot_pos_map)
+            rospy.loginfo(f"Sent robot_pos_map : \n{self.robot_pos_map}")
 
             if rate:
                 rospy.sleep(1/rate)
