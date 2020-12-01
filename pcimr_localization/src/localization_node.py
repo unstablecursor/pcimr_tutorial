@@ -50,26 +50,51 @@ class LocalizationNode:
         self.np_map = np.zeros((WIDTH, HEIGHT))
         self.oldmap = np.zeros((WIDTH, HEIGHT))
         self.new_move_prob_map = np.zeros((WIDTH, HEIGHT))
+        self.new_sensor_prob_map = np.zeros((WIDTH, HEIGHT))
+        self.sensor_kernel = np.zeros((WIDTH *2, HEIGHT*2))
         self.init_oldmap = False
 
         # it's rotated by 90 since our np representation is rotated
-        self.move_matrix = np.array([
+        self.move_kernel = np.array([
             [0, self.probs_mv[1], 0],
             [self.probs_mv[3], self.probs_mv[4], self.probs_mv[0]],
             [0, self.probs_mv[2], 0]]
             )
 
-    def convolve(self): 
+    def convolve_move(self):
+        self.new_sensor_prob_map = np.ones((WIDTH, HEIGHT))
         extended_map = np.zeros((WIDTH+2, HEIGHT+2))
         extended_map[1:WIDTH+1, 1:HEIGHT+1] = np.copy(self.oldmap)
+
+        extended_map_sens = np.ones((WIDTH+2, HEIGHT+2))
+        prob_arr = [0.1,0.8,0.1]
+
         for i in range(1,WIDTH+1):
             for j in range(1,HEIGHT+1):
                 if self.np_map[i-1,j-1] == 100 or self.np_map[i-1,j-1] == -1:
                     self.new_move_prob_map[i-1,j-1] = 0.0
                 else:
                     self.new_move_prob_map[i-1,j-1] = np.sum(np.multiply(extended_map[i-1:i+2,j-1:j+2], self.move_conv_matrix))
-        self.oldmap = np.copy(self.new_move_prob_map)
+                    if j + self.scan.ranges[2] < HEIGHT:
+                        if self.np_map[i-1, j-1 + int(self.scan.ranges[2])] == 100:
+                            extended_map_sens[i, j-1:j+2] *= prob_arr
+                    if j - self.scan.ranges[0] < HEIGHT:
+                        if self.np_map[i-1, j-1 - int(self.scan.ranges[0])] == 100:
+                            extended_map_sens[i, j-1:j+2] *= prob_arr
+                    if i + self.scan.ranges[3] < WIDTH:
+                        if self.np_map[i-1 + int(self.scan.ranges[3]), j-1] == 100:
+                            extended_map_sens[i-1:i+2,j] *= prob_arr
+                    if i - self.scan.ranges[1] < WIDTH:
+                        if self.np_map[i-1 - int(self.scan.ranges[1]), j-1] == 100:
+                            extended_map_sens[i-1:i+2,j] *= prob_arr
 
+
+        self.new_sensor_prob_map = np.copy(extended_map_sens[1:WIDTH+1, 1:HEIGHT+1])
+        self.new_sensor_prob_map[self.new_sensor_prob_map == 1] = 0.0
+        normalization = 1.0 / np.sum(self.new_sensor_prob_map)
+        self.new_move_prob_map = np.copy(np.multiply(self.new_sensor_prob_map, self.new_move_prob_map) * normalization)
+        self.oldmap = np.copy(self.new_move_prob_map)
+        
 
     def filter_map(self):
         np_map = self.map_to_np(self.map)
@@ -82,24 +107,25 @@ class LocalizationNode:
         self.robot_pos_map.data = self.np_to_map(pubb_map)
         rospy.loginfo(self.oldmap)
 
+    def find_and_update_robot_pos(self):
+        t = np.argmax(self.new_move_prob_map)
+        self.robot_x = t // WIDTH
+        self.robot_y = t % HEIGHT
 
     def get_move(self, msg):
         rospy.loginfo(f"Got move : \n{msg}")
         if msg.data == "N":
-            self.move_conv_matrix = np.rot90(self.move_matrix, 2)
-            self.robot_y += 1
+            self.move_conv_matrix = np.rot90(self.move_kernel, 2)
         if msg.data == "S":
-            self.move_conv_matrix = np.rot90(self.move_matrix, 4)
-            self.robot_y -= 1
+            self.move_conv_matrix = np.rot90(self.move_kernel, 4)
         if msg.data == "E":
-            self.move_conv_matrix = np.rot90(self.move_matrix, 1)
-            self.robot_x += 1
+            self.move_conv_matrix = np.rot90(self.move_kernel, 1)
         if msg.data == "W":
-            self.move_conv_matrix = np.rot90(self.move_matrix, 3)
-            self.robot_x -= 1
+            self.move_conv_matrix = np.rot90(self.move_kernel, 3)
         self.robot_move = msg
         if self.init_oldmap:
-            self.convolve()
+            self.convolve_move()
+            self.find_and_update_robot_pos()
             self.filter_map()
 
     def get_map(self, msg):
@@ -126,7 +152,7 @@ class LocalizationNode:
         
 
     def run(self, rate: float = 1):
-        self.oldmap[self.robot_x][self.robot_y] = 1
+        #self.oldmap[self.robot_x][self.robot_y] = 1
 
         while not rospy.is_shutdown():
             self.robot_pos = Point(self.robot_x,self.robot_y,0)
@@ -148,4 +174,4 @@ if __name__ == "__main__":
     rospy.init_node('localization_node')
 
     node = LocalizationNode()
-    node.run(rate=10)
+    node.run(rate=2)
