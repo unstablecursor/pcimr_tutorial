@@ -91,6 +91,8 @@ class LocalizationNode:
 
         self.new_sensor_prob_map = np.copy(extended_map_sens[1:WIDTH+1, 1:HEIGHT+1])
         self.new_sensor_prob_map[self.new_sensor_prob_map == 1] = 0.0
+        self.new_sensor_prob_map[self.np_map == -1] = 0.0
+        self.new_sensor_prob_map[self.np_map == 100] = 0.0
         normalization = 1.0 / np.sum(self.new_sensor_prob_map)
         self.new_move_prob_map = np.copy(np.multiply(self.new_sensor_prob_map, self.new_move_prob_map) * normalization)
         self.oldmap = np.copy(self.new_move_prob_map)
@@ -152,7 +154,8 @@ class LocalizationNode:
         
 
     def run(self, rate: float = 1):
-        #self.oldmap[self.robot_x][self.robot_y] = 1
+        self.oldmap[self.robot_x][self.robot_y] = 1
+        self.robot_pos_pub.publish(self.robot_pos)
 
         while not rospy.is_shutdown():
             self.robot_pos = Point(self.robot_x,self.robot_y,0)
