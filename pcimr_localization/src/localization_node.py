@@ -103,11 +103,11 @@ class LocalizationNode:
         #rospy.loginfo(np_map)
         # TODO: Filter map here...
         pubb_map = np.copy(self.new_move_prob_map)
-        pubb_map = pubb_map * 100
+        pubb_map = pubb_map * 100 
         pubb_map[np_map == -1] = -1
         pubb_map[np_map == 100] = 100
+        rospy.loginfo(pubb_map)
         self.robot_pos_map.data = self.np_to_map(pubb_map)
-        rospy.loginfo(self.oldmap)
 
     def find_and_update_robot_pos(self):
         t = np.argmax(self.new_move_prob_map)
@@ -115,7 +115,6 @@ class LocalizationNode:
         self.robot_y = t % HEIGHT
 
     def get_move(self, msg):
-        rospy.loginfo(f"Got move : \n{msg}")
         if msg.data == "N":
             self.move_conv_matrix = np.rot90(self.move_kernel, 2)
         if msg.data == "S":
@@ -139,7 +138,6 @@ class LocalizationNode:
 
 
     def get_scan(self, msg):
-        rospy.loginfo(f"Got scan : \n{msg.ranges}")
         self.scan = msg 
 
     def map_to_np(self, map: OccupancyGrid):
