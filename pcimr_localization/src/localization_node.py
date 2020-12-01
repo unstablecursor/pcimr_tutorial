@@ -32,6 +32,7 @@ class LocalizationNode:
         self.robot_move = String()
         self.map = OccupancyGrid()
         self.scan = LaserScan()
+        # Init robot position at 3,3,0
         self.robot_x = 3
         self.robot_y = 3
         self.robot_pos = Point(self.robot_x,self.robot_y,0)
@@ -39,7 +40,7 @@ class LocalizationNode:
                                     pose = Pose(Point(self.robot_x+0.5,self.robot_y+0.5,0), Quaternion(0.0,0.0,0.0,1.0)), 
                                     type=1,
                                     scale=Vector3(1,1,0.2),
-                                    color=ColorRGBA(0.1, 0.1, 1.0, 1.0))
+                                    color=ColorRGBA(0.0, 1.0, 0.0, 1.0))
         self.robot_pos_map = OccupancyGrid(header = Header(frame_id='map', seq=0))
         self.robot_pos_map.info.width = WIDTH
         self.robot_pos_map.info.height = HEIGHT
@@ -54,7 +55,8 @@ class LocalizationNode:
         self.sensor_kernel = np.zeros((WIDTH *2, HEIGHT*2))
         self.init_oldmap = False
 
-        # it's rotated by 90 since our np representation is rotated
+        # it's rotated by 90 since our np representation is rotated by 90 degrees. This kernel will 
+        # make my job lot easier and makes code much shorter.
         self.move_kernel = np.array([
             [0, self.probs_mv[1], 0],
             [self.probs_mv[3], self.probs_mv[4], self.probs_mv[0]],
@@ -63,9 +65,11 @@ class LocalizationNode:
 
     def convolve_move(self):
         self.new_sensor_prob_map = np.ones((WIDTH, HEIGHT))
+        # Extend map to handle convolution indexing problems.
         extended_map = np.zeros((WIDTH+2, HEIGHT+2))
         extended_map[1:WIDTH+1, 1:HEIGHT+1] = np.copy(self.oldmap)
-
+        
+        # Do the same for sensors.
         extended_map_sens = np.ones((WIDTH+2, HEIGHT+2))
         prob_arr = [0.1,0.8,0.1]
 
@@ -74,8 +78,9 @@ class LocalizationNode:
                 if self.np_map[i-1,j-1] == 100 or self.np_map[i-1,j-1] == -1:
                     self.new_move_prob_map[i-1,j-1] = 0.0
                 else:
-                    # Get move probablities
+                    # Calculate move probabilities
                     self.new_move_prob_map[i-1,j-1] = np.sum(np.multiply(extended_map[i-1:i+2,j-1:j+2], self.move_conv_matrix))
+                    # Calculate scan probabilities
                     if j + self.scan.ranges[2] < HEIGHT:
                         if self.np_map[i-1, j-1 + int(self.scan.ranges[2])] == 100:
                             extended_map_sens[i, j-1:j+2] *= prob_arr
@@ -91,30 +96,32 @@ class LocalizationNode:
 
 
         self.new_sensor_prob_map = np.copy(extended_map_sens[1:WIDTH+1, 1:HEIGHT+1])
+        # Get rid of uninitialized prob.
         self.new_sensor_prob_map[self.new_sensor_prob_map == 1] = 0.0
+        # Set impossible places to 0
         self.new_sensor_prob_map[self.np_map == -1] = 0.0
         self.new_sensor_prob_map[self.np_map == 100] = 0.0
         inter_map = np.multiply(self.new_sensor_prob_map, self.new_move_prob_map)
+        # Normalize
         normalization = 1.0 / np.sum(inter_map)
         self.new_move_prob_map = np.copy(inter_map * normalization)
         self.oldmap = np.copy(self.new_move_prob_map)
-        
 
-    def filter_map(self):
-        np_map = self.map_to_np(self.map)
-        #rospy.loginfo(np_map)
-        # TODO: Filter map here...
-        pubb_map = np.copy(self.new_move_prob_map)
-        pubb_map = pubb_map * 100 
-        pubb_map[np_map == -1] = -1
-        pubb_map[np_map == 100] = 100
-        rospy.loginfo(pubb_map)
-        self.robot_pos_map.data = self.np_to_map(pubb_map)
-
+    
     def find_and_update_robot_pos(self):
         t = np.argmax(self.new_move_prob_map)
         self.robot_x = t // WIDTH
-        self.robot_y = t % HEIGHT
+        self.robot_y = t % HEIGHT    
+
+    def filter_map(self):
+        np_map = self.map_to_np(self.map)
+        # Create map for publishing
+        pubb_map = np.copy(self.new_move_prob_map)
+        # Change * 100 to something else to change visuals. However, i think this works best
+        pubb_map = pubb_map * 100 
+        pubb_map[np_map == -1] = -1
+        pubb_map[np_map == 100] = 100
+        self.robot_pos_map.data = self.np_to_map(pubb_map)
 
     def get_move(self, msg):
         if msg.data == "N":
@@ -148,10 +155,7 @@ class LocalizationNode:
 
     def np_to_map(self, arr: np.array):
         arr = np.array(np.transpose(arr), dtype=np.int8)
-        return arr.ravel()
-    
-
-        
+        return arr.ravel()  
 
     def run(self, rate: float = 1):
         self.oldmap[self.robot_x][self.robot_y] = 1
