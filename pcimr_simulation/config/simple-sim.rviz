@@ -68,7 +68,7 @@ Visualization Manager:
       Draw Behind: false
       Enabled: true
       Name: Robot Pose Probability
-      Topic: ""
+      Topic: "/robot_pos_map"
       Unreliable: false
       Use Timestamp: false
       Value: true

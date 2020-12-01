@@ -5,11 +5,15 @@ import rospy
 import numpy as np
 from threading import Lock
 
+
 from std_msgs.msg import String, ColorRGBA, Header
 from sensor_msgs.msg import LaserScan
 from geometry_msgs.msg import Point, Twist, Pose, Quaternion, Vector3
 from nav_msgs.msg import Odometry, OccupancyGrid, MapMetaData
 from visualization_msgs.msg import Marker
+
+HEIGHT = 20
+WIDTH = 20
 
 class LocalizationNode:
 
@@ -28,26 +32,87 @@ class LocalizationNode:
         self.robot_move = String()
         self.map = OccupancyGrid()
         self.scan = LaserScan()
-
-        self.robot_pos = Point(3,3,0)
+        self.robot_x = 3
+        self.robot_y = 3
+        self.robot_pos = Point(self.robot_x,self.robot_y,0)
         self.robot_pos_viz = Marker(header = Header(frame_id='map'),
-                                    pose = Pose(self.robot_pos, Quaternion(0.0,0.0,0.0,1.0)), 
+                                    pose = Pose(Point(self.robot_x+0.5,self.robot_y+0.5,0), Quaternion(0.0,0.0,0.0,1.0)), 
                                     type=1,
-                                    scale=Vector3(1,1,1),
+                                    scale=Vector3(1,1,0.2),
                                     color=ColorRGBA(0.1, 0.1, 1.0, 1.0))
-        self.robot_pos_map = OccupancyGrid()
+        self.robot_pos_map = OccupancyGrid(header = Header(frame_id='map', seq=0))
+        self.robot_pos_map.info.width = WIDTH
+        self.robot_pos_map.info.height = HEIGHT
+        self.robot_pos_map.info.resolution = 1
+
+        self.probs_mv = rospy.get_param('/simple_sim_node/robot_move_probabilities', [0.9, 0.04, 0.04, 0.0, 0.02])
+
+        self.np_map = np.zeros((WIDTH, HEIGHT))
+        self.oldmap = np.zeros((WIDTH, HEIGHT))
+        self.new_move_prob_map = np.zeros((WIDTH, HEIGHT))
+        self.init_oldmap = False
+
+        # it's rotated by 90 since our np representation is rotated
+        self.move_matrix = np.array([
+            [0, self.probs_mv[1], 0],
+            [self.probs_mv[3], self.probs_mv[4], self.probs_mv[0]],
+            [0, self.probs_mv[2], 0]]
+            )
+
+    def convolve(self): 
+        extended_map = np.zeros((WIDTH+2, HEIGHT+2))
+        extended_map[1:WIDTH+1, 1:HEIGHT+1] = np.copy(self.oldmap)
+        for i in range(1,WIDTH+1):
+            for j in range(1,HEIGHT+1):
+                if self.np_map[i-1,j-1] == 100 or self.np_map[i-1,j-1] == -1:
+                    self.new_move_prob_map[i-1,j-1] = 0.0
+                else:
+                    self.new_move_prob_map[i-1,j-1] = np.sum(np.multiply(extended_map[i-1:i+2,j-1:j+2], self.move_conv_matrix))
+        self.oldmap = np.copy(self.new_move_prob_map)
+
+
+    def filter_map(self):
+        np_map = self.map_to_np(self.map)
+        #rospy.loginfo(np_map)
+        # TODO: Filter map here...
+        pubb_map = np.copy(self.new_move_prob_map)
+        pubb_map = pubb_map * 100
+        pubb_map[np_map == -1] = -1
+        pubb_map[np_map == 100] = 100
+        self.robot_pos_map.data = self.np_to_map(pubb_map)
+        rospy.loginfo(self.oldmap)
+
 
     def get_move(self, msg):
-        rospy.logdebug(f"Got move : \n{msg}")
+        rospy.loginfo(f"Got move : \n{msg}")
+        if msg.data == "N":
+            self.move_conv_matrix = np.rot90(self.move_matrix, 2)
+            self.robot_y += 1
+        if msg.data == "S":
+            self.move_conv_matrix = np.rot90(self.move_matrix, 4)
+            self.robot_y -= 1
+        if msg.data == "E":
+            self.move_conv_matrix = np.rot90(self.move_matrix, 1)
+            self.robot_x += 1
+        if msg.data == "W":
+            self.move_conv_matrix = np.rot90(self.move_matrix, 3)
+            self.robot_x -= 1
         self.robot_move = msg
+        if self.init_oldmap:
+            self.convolve()
+            self.filter_map()
 
     def get_map(self, msg):
-        rospy.logdebug(f"Got map : \n{msg}")
+        #rospy.logdebug(f"Got map : \n{msg}")
         self.map = msg
+        if not self.init_oldmap:
+            self.np_map = self.map_to_np(self.map)
+            self.init_oldmap = True
+
 
     def get_scan(self, msg):
-        rospy.logdebug(f"Got scan : \n{msg}")
-        self.scan = msg
+        rospy.loginfo(f"Got scan : \n{msg.ranges}")
+        self.scan = msg 
 
     def map_to_np(self, map: OccupancyGrid):
         np_map = np.transpose(np.asarray(map.data, dtype=np.int8).reshape(map.info.width, map.info.height))
@@ -55,29 +120,25 @@ class LocalizationNode:
 
     def np_to_map(self, arr: np.array):
         arr = np.array(np.transpose(arr), dtype=np.int8)
-        grid = OccupancyGrid()
-        grid.data = arr.ravel()
-        grid.info = MapMetaData()
-        grid.info.height = arr.shape[0]
-        grid.info.width = arr.shape[1]
-
-        return grid
+        return arr.ravel()
     
-    def filter_map(self):
-        np_map = self.map_to_np(self.map)
-        # TODO: Filter map here...
-        self.robot_pos_map = self.np_to_map(np_map)
+
         
 
     def run(self, rate: float = 1):
+        self.oldmap[self.robot_x][self.robot_y] = 1
+
         while not rospy.is_shutdown():
-            self.filter_map()
+            self.robot_pos = Point(self.robot_x,self.robot_y,0)
+            self.robot_pos_viz.pose.position.x = self.robot_x + 0.5
+            self.robot_pos_viz.pose.position.y = self.robot_y + 0.5
+
             self.robot_pos_pub.publish(self.robot_pos)
-            rospy.logdebug(f"Sent robot_pos : \n{self.robot_pos}")
+            #rospy.logdebug(f"Sent robot_pos : \n{self.robot_pos}")
             self.robot_pos_viz_pub.publish(self.robot_pos_viz)
-            rospy.logdebug(f"Sent robot_pos_viz : \n{self.robot_pos_viz}")
+            #rospy.logdebug(f"Sent robot_pos_viz : \n{self.robot_pos_viz}")
             self.robot_ros_map_pub.publish(self.robot_pos_map)
-            rospy.logdebug(f"Sent robot_pos_map : \n{self.robot_pos_map}")
+            #rospy.loginfo(f"Sent robot_pos_map : \n{self.robot_pos_map.data}")
 
             if rate:
                 rospy.sleep(1/rate)
