@@ -74,6 +74,7 @@ class LocalizationNode:
                 if self.np_map[i-1,j-1] == 100 or self.np_map[i-1,j-1] == -1:
                     self.new_move_prob_map[i-1,j-1] = 0.0
                 else:
+                    # Get move probablities
                     self.new_move_prob_map[i-1,j-1] = np.sum(np.multiply(extended_map[i-1:i+2,j-1:j+2], self.move_conv_matrix))
                     if j + self.scan.ranges[2] < HEIGHT:
                         if self.np_map[i-1, j-1 + int(self.scan.ranges[2])] == 100:
@@ -93,8 +94,9 @@ class LocalizationNode:
         self.new_sensor_prob_map[self.new_sensor_prob_map == 1] = 0.0
         self.new_sensor_prob_map[self.np_map == -1] = 0.0
         self.new_sensor_prob_map[self.np_map == 100] = 0.0
-        normalization = 1.0 / np.sum(self.new_sensor_prob_map)
-        self.new_move_prob_map = np.copy(np.multiply(self.new_sensor_prob_map, self.new_move_prob_map) * normalization)
+        inter_map = np.multiply(self.new_sensor_prob_map, self.new_move_prob_map)
+        normalization = 1.0 / np.sum(inter_map)
+        self.new_move_prob_map = np.copy(inter_map * normalization)
         self.oldmap = np.copy(self.new_move_prob_map)
         
 
