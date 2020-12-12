@@ -1,0 +1,5 @@
+
+<launch>
+  <node pkg="pcimr_global_planner" name="global_planner_node" type="global_planner_node.py" output="screen">
+  </node>
+</launch>
