@@ -45,24 +45,14 @@ class GlobalPlannerNode:
         self.init_oldmap = False
 
 
-    def filter_map(self):
-        np_map = self.map_to_np(self.map)
-        # Create map for publishing
-        # Change * 100 to something else to change visuals. However, i think this works best
-        pubb_map = pubb_map * 100 
-        pubb_map[np_map == -1] = -1
-        pubb_map[np_map == 100] = 100
-        robot_pos_map.data = self.np_to_map(pubb_map)
-
-    def get_goal(self, msg):
-        self.goal =  msg
-
-    def get_map(self, msg):
-        self.map = msg
-
-    def get_robot_pos(self, msg):
-        self.robot_pos = msg 
-
+    # def filter_map(self):
+    #     np_map = self.map_to_np(self.map)
+    #     # Create map for publishing
+    #     # Change * 100 to something else to change visuals. However, i think this works best
+    #     pubb_map = pubb_map * 100 
+    #     pubb_map[np_map == -1] = -1
+    #     pubb_map[np_map == 100] = 100
+    #     robot_pos_map.data = self.np_to_map(pubb_map)
     def map_to_np(self, map: OccupancyGrid):
         np_map = np.transpose(np.asarray(map.data, dtype=np.int8).reshape(map.info.width, map.info.height))
         return np_map
@@ -71,10 +61,59 @@ class GlobalPlannerNode:
         arr = np.array(np.transpose(arr), dtype=np.int8)
         return arr.ravel()  
 
+    def get_map(self, msg):
+        #rospy.loginfo(f"Got map: {msg}")
+        self.map = msg
+
+    def get_robot_pos(self, msg):
+        #rospy.loginfo(f"Got robot pos: {msg}")
+        self.robot_pos = msg 
+
+    def get_goal(self, msg):
+        #rospy.loginfo(f"Got goal: {msg}")
+        self.goal =  msg
+        self.run_a_star()
+        # TODO: Visualize goal, Update costmap once, check whether goal has given already. 
+
+    def create_global_plan(self):
+        if self.run_a_star():
+            pass
+            # Create and publish plan
+        else:
+            rospy.logwarn("Error in planner")
+
+    def get_heuristic(self, x, y):
+        return abs(self.goal.pose.position.x - x) ** 2 + abs(self.goal.pose.position.y - y) ** 2
+    
+    def run_a_star(self):
+        print(self.robot_pos.x, int(self.robot_pos.x))
+        x = int(self.robot_pos.x)
+        y = int(self.robot_pos.y)
+        goal_x = int(self.goal.pose.position.x)
+        goal_y = int(self.goal.pose.position.y)
+        np_map = self.map_to_np(self.map)
+        is_visited = np.zeros(np_map.shape)
+        is_visited[x,y] = 1
+        # Set unreachable to -1 to prevent visiting them later
+        is_visited[np_map == 100] = -1
+        is_visited[np_map == -1] = -1
+        if is_visited[goal_x, goal_y] == -1:
+            rospy.logwarn("Goal is unfeasible!")
+            return False
+        cost_h = np.full(np_map.shape, np.inf)
+        cost_h[x,y] = 0
+        costs = np.full(np_map.shape, np.inf)
+        costs[x,y] = self.get_heuristic(x,y) + cost_h[x,y]
+
+        print(np.where(np.logical_and(is_visited == 1, costs == costs.min())))
+        pass
+
+    
+
     def run(self, rate: float = 1):
 
         while not rospy.is_shutdown():
-
+            
             self.global_path_pub.publish(self.global_path)
             #rospy.logdebug(f"Sent robot_pos : \n{self.robot_pos}")
             self.goal_viz_pub.publish(self.goal_viz)
