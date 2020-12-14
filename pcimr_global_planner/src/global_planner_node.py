@@ -35,7 +35,11 @@ class GlobalPlannerNode:
         self.goal=PoseStamped()
 
         self.global_path = Path()
-        self.global_path_viz = Marker()
+        self.global_path_viz = Marker(header = Header(frame_id='map'),
+                                    pose = Pose(Point(0,0,0), Quaternion(0.0,0.0,0.0,1.0)), 
+                                    type=4,
+                                    scale=Vector3(0.1,0.1,0.1),
+                                    color=ColorRGBA(0.0, 1.0, 0.0, 1.0))
         self.goal_viz = Marker(header = Header(frame_id='map'),
                                     pose = Pose(Point(0,0,0), Quaternion(0.0,0.0,0.0,1.0)), 
                                     type=1,
@@ -85,6 +89,26 @@ class GlobalPlannerNode:
     def get_heuristic(self, x, y):
         return abs(self.goal.pose.position.x - x) ** 2 + abs(self.goal.pose.position.y - y) ** 2
     
+    def update_path_marker(self, l):
+        self.global_path_viz = Marker(header = Header(frame_id='map'),
+                            pose = Pose(Point(0,0,0), Quaternion(0.0,0.0,0.0,1.0)), 
+                            type=4,
+                            scale=Vector3(0.1,0.1,0.1),
+                            color=ColorRGBA(0.0, 1.0, 0.0, 1.0))
+        for item in l:
+            self.global_path_viz.points.append(Point(item[0], item[1], 0))
+    
+    def update_path(self, l):
+        self.global_path = Path(header = Header(frame_id='map'))
+        for item in l:
+            pose = Pose(Point(item[0],item[1],0), Quaternion(0.0,0.0,0.0,1.0))
+            self.global_path.poses.append(pose)
+    
+    def update_goal_marker(self, x, y):
+        self.goal_viz.pose.position.x = int(x) + 0.5
+        self.goal_viz.pose.position.y = int(y) + 0.5
+
+
     def run_a_star(self):
         print(self.robot_pos.x, int(self.robot_pos.x))
         x = int(self.robot_pos.x)
@@ -104,9 +128,16 @@ class GlobalPlannerNode:
         cost_h[x,y] = 0
         costs = np.full(np_map.shape, np.inf)
         costs[x,y] = self.get_heuristic(x,y) + cost_h[x,y]
-
+        path = []
         print(np.where(np.logical_and(is_visited == 1, costs == costs.min())))
-        pass
+        # TODO : Implement A*
+
+
+
+
+
+        
+        return path
 
     
 
