@@ -143,8 +143,10 @@ class GlobalPlannerNode:
         costs[x,y] = self.get_heuristic(x,y) + cost_g[x,y]
         path = []
         while 0 in is_visited:
-            curr_x = np.where(np.logical_and(is_visited == 0, costs == costs.min()))[0][0]
-            curr_y = np.where(np.logical_and(is_visited == 0, costs == costs.min()))[1][0]
+            mod_costs = np.copy(costs)
+            mod_costs[is_visited != 0] = math.inf
+            curr_x = np.where(mod_costs == mod_costs.min())[0][0]
+            curr_y = np.where(mod_costs == mod_costs.min())[1][0]
             print(curr_x, curr_y)
             if curr_x == goal_x and curr_y == goal_y:
                 print("Found goal!")
